@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.autograd import Function, Variable, grad
-import torch.nn.functional as F
-from torch import nn
-from torch.nn.parameter import Parameter
-
-import numpy as np
-import numpy.random as npr
+from torch.autograd import Variable, grad
 import numpy.testing as npt
 
-import cvxpy as cp
-
-from block import block
-
-from mpc.dynamics import NNDynamics
+from dynamics import NNDynamics
 
 
 # import sys
@@ -25,8 +15,8 @@ from mpc.dynamics import NNDynamics
 def test_grad_input():
     torch.manual_seed(0)
 
-    n_batch, n_state, n_ctrl = 2,3,4
-    hidden_sizes = [42]*5
+    n_batch, n_state, n_ctrl = 2, 3, 4
+    hidden_sizes = [42] * 5
 
     for act in ['relu', 'sigmoid']:
         x = Variable(torch.rand(n_batch, n_state), requires_grad=True)
@@ -40,7 +30,7 @@ def test_grad_input():
             Ri, Si = [], []
             for j in range(n_state):
                 grad_xij, grad_uij = grad(
-                x_[i,j], [x, u], create_graph=True)
+                    x_[i, j], [x, u], create_graph=True)
                 grad_xij = grad_xij[i]
                 grad_uij = grad_uij[i]
                 Ri.append(grad_xij)
@@ -55,5 +45,6 @@ def test_grad_input():
         npt.assert_allclose(R.data.numpy(), R_.data.numpy(), rtol=1e-4)
         npt.assert_allclose(S.data.numpy(), S_.data.numpy(), rtol=1e-4)
 
-if __name__=='__main__':
+
+if __name__ == '__main__':
     test_grad_input()

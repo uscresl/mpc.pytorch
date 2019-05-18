@@ -1,10 +1,6 @@
 import torch
 from torch.autograd import Function, Variable
 from torch.nn import Module
-from torch.nn.parameter import Parameter
-
-import numpy as np
-import numpy.random as npr
 
 from collections import namedtuple
 
@@ -12,11 +8,9 @@ from enum import Enum
 
 import sys
 
-from . import util
-from .pnqp import pnqp
-from .lqr_step import LQRStep
-from .dynamics import CtrlPassthroughDynamics
-
+import util
+from lqr_step import LQRStep
+from dynamics import CtrlPassthroughDynamics
 
 QuadCost = namedtuple('QuadCost', 'C c')
 LinDx = namedtuple('LinDx', 'F f')
@@ -35,6 +29,7 @@ class GradMethods(Enum):
 
 class SlewRateCost(Module):
     """Hacky way of adding the slew rate penalty to costs."""
+
     # TODO: It would be cleaner to update this to just use the slew
     # rate penalty instead of # slew_C
     def __init__(self, cost, slew_C, n_state, n_ctrl):
@@ -179,15 +174,14 @@ class MPC(Module):
         self.slew_rate_penalty = slew_rate_penalty
         self.prev_ctrl = prev_ctrl
 
-
     # @profile
     def forward(self, x_init, cost, dx):
         # QuadCost.C: [T, n_batch, n_tau, n_tau]
         # QuadCost.c: [T, n_batch, n_tau]
         assert isinstance(cost, QuadCost) or \
-            isinstance(cost, Module) or isinstance(cost, Function)
+               isinstance(cost, Module) or isinstance(cost, Function)
         assert isinstance(dx, LinDx) or \
-            isinstance(dx, Module) or isinstance(dx, Function)
+               isinstance(dx, Module) or isinstance(dx, Function)
 
         # TODO: Clean up inferences, expansions, and assumptions made here.
         if self.n_batch is not None:
@@ -198,7 +192,6 @@ class MPC(Module):
             print('MPC Error: Could not infer batch size, pass in as n_batch')
             sys.exit(-1)
 
-
         # if c.ndimension() == 2:
         #     c = c.unsqueeze(1).expand(self.T, n_batch, -1)
 
@@ -207,11 +200,11 @@ class MPC(Module):
             if C.ndimension() == 2:
                 # Add the time and batch dimensions.
                 C = C.unsqueeze(0).unsqueeze(0).expand(
-                    self.T, n_batch, self.n_state+self.n_ctrl, -1)
+                    self.T, n_batch, self.n_state + self.n_ctrl, -1)
             elif C.ndimension() == 3:
                 # Add the batch dimension.
                 C = C.unsqueeze(1).expand(
-                    self.T, n_batch, self.n_state+self.n_ctrl, -1)
+                    self.T, n_batch, self.n_state + self.n_ctrl, -1)
 
             if c.ndimension() == 1:
                 # Add the time and batch dimensions.
@@ -280,8 +273,8 @@ class MPC(Module):
                 for j in range(n_batch):
                     if for_out.costs[j] <= best['costs'][j] + self.best_cost_eps:
                         n_not_improved = 0
-                        best['x'][j] = x[:,j].unsqueeze(1)
-                        best['u'][j] = u[:,j].unsqueeze(1)
+                        best['x'][j] = x[:, j].unsqueeze(1)
+                        best['u'][j] = u[:, j].unsqueeze(1)
                         best['costs'][j] = for_out.costs[j]
                         best['full_du_norm'][j] = for_out.full_du_norm[j]
 
@@ -298,9 +291,8 @@ class MPC(Module):
                 ))
 
             if max(for_out.full_du_norm) < self.eps or \
-               n_not_improved > self.not_improved_lim:
+                    n_not_improved > self.not_improved_lim:
                 break
-
 
         x = torch.cat(best['x'], dim=1)
         u = torch.cat(best['u'], dim=1)
@@ -331,8 +323,8 @@ class MPC(Module):
                 I = for_out.full_du_norm < self.eps
                 Ix = Variable(I.unsqueeze(0).unsqueeze(2).expand_as(x)).type_as(x.data)
                 Iu = Variable(I.unsqueeze(0).unsqueeze(2).expand_as(u)).type_as(u.data)
-                x = x*Ix + x.clone().detach()*(1.-Ix)
-                u = u*Iu + u.clone().detach()*(1.-Iu)
+                x = x * Ix + x.clone().detach() * (1. - Ix)
+                u = u * Iu + u.clone().detach() * (1. - Iu)
 
         costs = best['costs']
         return (x, u, costs)
@@ -368,33 +360,33 @@ class MPC(Module):
             _nsc = _n_state + self.n_ctrl
             n_batch = C.size(1)
             _C = torch.zeros(self.T, n_batch, _nsc, _nsc).type_as(C)
-            half_gamI = self.slew_rate_penalty*torch.eye(
+            half_gamI = self.slew_rate_penalty * torch.eye(
                 self.n_ctrl).unsqueeze(0).unsqueeze(0).repeat(self.T, n_batch, 1, 1)
-            _C[:,:,:self.n_ctrl,:self.n_ctrl] = half_gamI
-            _C[:,:,-self.n_ctrl:,:self.n_ctrl] = -half_gamI
-            _C[:,:,:self.n_ctrl,-self.n_ctrl:] = -half_gamI
-            _C[:,:,-self.n_ctrl:,-self.n_ctrl:] = half_gamI
+            _C[:, :, :self.n_ctrl, :self.n_ctrl] = half_gamI
+            _C[:, :, -self.n_ctrl:, :self.n_ctrl] = -half_gamI
+            _C[:, :, :self.n_ctrl, -self.n_ctrl:] = -half_gamI
+            _C[:, :, -self.n_ctrl:, -self.n_ctrl:] = half_gamI
             slew_C = _C.clone()
             _C = _C + torch.nn.ZeroPad2d((self.n_ctrl, 0, self.n_ctrl, 0))(C)
 
             _c = torch.cat((
-                torch.zeros(self.T, n_batch, self.n_ctrl).type_as(c),c), 2)
+                torch.zeros(self.T, n_batch, self.n_ctrl).type_as(c), c), 2)
 
             _F0 = torch.cat((
-                torch.zeros(self.n_ctrl, self.n_state+self.n_ctrl),
+                torch.zeros(self.n_ctrl, self.n_state + self.n_ctrl),
                 torch.eye(self.n_ctrl),
             ), 1).type_as(F).unsqueeze(0).unsqueeze(0).repeat(
-                self.T-1, n_batch, 1, 1
+                self.T - 1, n_batch, 1, 1
             )
             _F1 = torch.cat((
                 torch.zeros(
-                    self.T-1, n_batch, self.n_state, self.n_ctrl
-                ).type_as(F),F), 3)
+                    self.T - 1, n_batch, self.n_state, self.n_ctrl
+                ).type_as(F), F), 3)
             _F = torch.cat((_F0, _F1), 2)
 
             if f is not None:
                 _f = torch.cat((
-                    torch.zeros(self.T-1, n_batch, self.n_ctrl).type_as(f),f), 2)
+                    torch.zeros(self.T - 1, n_batch, self.n_ctrl).type_as(f), f), 2)
             else:
                 _f = Variable(torch.Tensor())
 
@@ -444,7 +436,7 @@ class MPC(Module):
                 no_op_forward=no_op_forward,
             )
             x, u = _lqr(_x_init, _C, _c, _F, _f)
-            x = x[:,:,self.n_ctrl:]
+            x = x[:, :, self.n_ctrl:]
 
             return x, u, _lqr
 
@@ -467,7 +459,7 @@ More details: https://github.com/locuslab/mpc.pytorch/issues/12
             for t in range(self.T):
                 tau_t = tau[t]
                 if self.slew_rate_penalty is not None:
-                    cost = Cf(tau_t) + (slew_penalty[t-1] if t > 0 else 0)
+                    cost = Cf(tau_t) + (slew_penalty[t - 1] if t > 0 else 0)
                 else:
                     cost = Cf(tau_t)
 
@@ -517,10 +509,10 @@ More details: https://github.com/locuslab/mpc.pytorch/issues/12
             R, S = dynamics.grad_input(_x, _u)
 
             f = _new_x - util.bmv(R, _x) - util.bmv(S, _u)
-            f = f.view(self.T-1, n_batch, self.n_state)
+            f = f.view(self.T - 1, n_batch, self.n_state)
 
-            R = R.contiguous().view(self.T-1, n_batch, self.n_state, self.n_state)
-            S = S.contiguous().view(self.T-1, n_batch, self.n_state, self.n_ctrl)
+            R = R.contiguous().view(self.T - 1, n_batch, self.n_state, self.n_state)
+            S = S.contiguous().view(self.T - 1, n_batch, self.n_state, self.n_ctrl)
             F = torch.cat((R, S), 3)
 
             if not diff:
@@ -532,7 +524,7 @@ More details: https://github.com/locuslab/mpc.pytorch/issues/12
             x = [x_init]
             F, f = [], []
             for t in range(self.T):
-                if t < self.T-1:
+                if t < self.T - 1:
                     xt = Variable(x[t], requires_grad=True)
                     ut = Variable(u[t], requires_grad=True)
                     xut = torch.cat((xt, ut), 1)
@@ -540,11 +532,11 @@ More details: https://github.com/locuslab/mpc.pytorch/issues/12
 
                     # Linear dynamics approximation.
                     if self.grad_method in [GradMethods.AUTO_DIFF,
-                                             GradMethods.ANALYTIC_CHECK]:
+                                            GradMethods.ANALYTIC_CHECK]:
                         Rt, St = [], []
                         for j in range(self.n_state):
                             Rj, Sj = torch.autograd.grad(
-                                new_x[:,j].sum(), [xt, ut],
+                                new_x[:, j].sum(), [xt, ut],
                                 retain_graph=True)
                             if not diff:
                                 Rj, Sj = Rj.data, Sj.data
@@ -554,12 +546,12 @@ More details: https://github.com/locuslab/mpc.pytorch/issues/12
                         St = torch.stack(St, dim=1)
 
                         if self.grad_method == GradMethods.ANALYTIC_CHECK:
-                            assert False # Not updated
+                            assert False  # Not updated
                             Rt_autograd, St_autograd = Rt, St
                             Rt, St = dynamics.grad_input(xt, ut)
                             eps = 1e-8
-                            if torch.max(torch.abs(Rt-Rt_autograd)).data[0] > eps or \
-                            torch.max(torch.abs(St-St_autograd)).data[0] > eps:
+                            if torch.max(torch.abs(Rt - Rt_autograd)).data[0] > eps or \
+                                    torch.max(torch.abs(St - St_autograd)).data[0] > eps:
                                 print('''
         nmpc.ANALYTIC_CHECK error: The analytic derivative of the dynamics function may be off.
                                 ''')
@@ -576,7 +568,7 @@ More details: https://github.com/locuslab/mpc.pytorch/issues/12
                                 lambda s: dynamics(s, ut[i]), xt[i], 1e-4
                             )
                             Si = util.jacobian(
-                                lambda a : dynamics(xt[i], a), ut[i], 1e-4
+                                lambda a: dynamics(xt[i], a), ut[i], 1e-4
                             )
                             if not diff:
                                 Ri, Si = Ri.data, Si.data
@@ -595,7 +587,7 @@ More details: https://github.com/locuslab/mpc.pytorch/issues/12
                     ft = new_x - util.bmv(Rt, xt) - util.bmv(St, ut)
                     f.append(ft)
 
-                if t < self.T-1:
+                if t < self.T - 1:
                     x.append(util.detach_maybe(new_x))
 
             F = torch.stack(F, 0)
