@@ -15,8 +15,9 @@ def pnqp(H, q, lower, upper, x_init=None, n_iter=20):
         if n == 1:
             x_init = -(1. / H.squeeze(2)) * q
         else:
-            H_lu = H.btrifact()
-            x_init = -q.btrisolve(*H_lu)  # Clamped in the x assignment.
+            # H_lu = H.btrifact()  # XXX deprecated!!!
+            H_lu = torch.lu(H)
+            x_init = -q.btrisolve(H_lu[0], H_lu[1])  # Clamped in the x assignment.
     else:
         x_init = x_init.clone()  # Don't over-write the original x_init.
 
@@ -48,7 +49,8 @@ def pnqp(H, q, lower, upper, x_init=None, n_iter=20):
         if n == 1:
             dx = -(1. / H_.squeeze(2)) * g_
         else:
-            H_lu_ = H_.btrifact()
+            # H_lu_ = H_.btrifact()  # XXX deprecated!!!
+            H_lu_ = torch.lu(H)
             dx = -g_.btrisolve(*H_lu_)
 
         J = torch.norm(dx, 2, 1) >= 1e-4
